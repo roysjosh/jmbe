@@ -41,6 +41,7 @@ public interface IAudioCodec
      * @return audio data with optional metadata
      */
     IAudioWithMetadata getAudioWithMetadata(byte[] frameData);
+    IAudioWithMetadata getAudioWithMetadata(byte[] frameData, ICryptoContext cryptoContext);
 
     /**
      * Resets the audio converter for a new call.  This causes the stored previous frame to be reset to a default

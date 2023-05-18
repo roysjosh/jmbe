@@ -21,6 +21,8 @@ package jmbe.codec.imbe;
 import jmbe.audio.AudioWithoutMetadata;
 import jmbe.iface.IAudioCodec;
 import jmbe.iface.IAudioWithMetadata;
+import jmbe.iface.ICryptoContext;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,7 +65,13 @@ public class IMBEAudioCodec implements IAudioCodec
     @Override
     public IAudioWithMetadata getAudioWithMetadata(byte[] frameData)
     {
-        IMBEFrame frame = new IMBEFrame(frameData);
+        return this.getAudioWithMetadata(frameData, null);
+    }
+
+    @Override
+    public IAudioWithMetadata getAudioWithMetadata(byte[] frameData, ICryptoContext cryptoContext)
+    {
+        IMBEFrame frame = new IMBEFrame(frameData, cryptoContext);
         return AudioWithoutMetadata.create(mSynthesizer.getAudio(frame));
     }
 

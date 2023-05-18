@@ -22,6 +22,8 @@ package jmbe.codec.imbe;
 import jmbe.binary.BinaryFrame;
 import jmbe.edac.Golay23;
 import jmbe.edac.Hamming15;
+import jmbe.iface.ICryptoContext;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -80,8 +82,20 @@ public class IMBEFrame
         decode();
     }
 
-    private void decode()
+    public IMBEFrame(byte[] data, ICryptoContext cryptoContext)
     {
+        mFrame = BinaryFrame.fromBytes(data, ByteOrder.LITTLE_ENDIAN);
+        decode(cryptoContext);
+    }
+
+    private void decode() {
+        this.decode(null);
+    }
+
+    private void decode(ICryptoContext cryptoContext)
+    {
+        // XXX IMPLEMENT XXX
+
         IMBEInterleave.deinterleave(mFrame);
 
         mErrors[0] = Golay23.checkAndCorrect(mFrame, 0);

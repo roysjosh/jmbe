@@ -23,11 +23,13 @@ import jmbe.audio.AudioWithMetadata;
 import jmbe.codec.FrameType;
 import jmbe.iface.IAudioCodec;
 import jmbe.iface.IAudioWithMetadata;
+import jmbe.iface.ICryptoContext;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Audio converter for AMBE frames encoded at 3600 bps with 2450 bps data and 1250 bps FEC
+ * Audio converter for AMBE frames encoded at 3600 bps with 2450 bps data and 1150 bps FEC
  */
 public class AMBEAudioCodec implements IAudioCodec
 {
@@ -66,10 +68,15 @@ public class AMBEAudioCodec implements IAudioCodec
      * @return decoded audio and any associated metadata such as tones or dtmf/knox codes
      */
     @Override
-    public IAudioWithMetadata getAudioWithMetadata(byte[] frameData)
+    public IAudioWithMetadata getAudioWithMetadata(byte[] frameData) {
+        return this.getAudioWithMetadata(frameData, null);
+    }
+
+    @Override
+    public IAudioWithMetadata getAudioWithMetadata(byte[] frameData, ICryptoContext cryptoContext)
     {
-        AMBEFrame frame = new AMBEFrame(frameData);
-        AudioWithMetadata audioWithMetadata = AudioWithMetadata.create(getAudio(frameData));
+        AMBEFrame frame = new AMBEFrame(frameData, cryptoContext);
+        AudioWithMetadata audioWithMetadata = AudioWithMetadata.create(getAudio(frame));
 
         if(frame.getFrameType() == FrameType.TONE)
         {

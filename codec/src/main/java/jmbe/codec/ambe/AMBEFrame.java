@@ -23,6 +23,8 @@ import jmbe.binary.BinaryFrame;
 import jmbe.codec.FrameType;
 import jmbe.edac.Golay23;
 import jmbe.edac.Golay24;
+import jmbe.iface.ICryptoContext;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +45,9 @@ public class AMBEFrame
     private static final int[] VECTOR_C2 = {46, 50, 54, 58, 62, 66, 70, 3, 7, 11, 15};
     private static final int[] VECTOR_C3 = {19, 23, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63, 67, 71};
     private static final int[] VECTOR_U0 = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    private static final int[] VECTOR_U1 = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    private static final int[] VECTOR_U2 = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    private static final int[] VECTOR_U3 = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
     private static final int[] VECTOR_U0_TONE_CHECK = {0, 1, 2, 3, 4, 5};
     private static final int[] VECTOR_U3_TONE_CHECK = {10, 11, 12, 13};
     private static final int[] VECTOR_U0_B0_HIGH = {0, 1, 2, 3};
@@ -90,12 +95,18 @@ public class AMBEFrame
         decode();
     }
 
+    public AMBEFrame(byte[] frame, ICryptoContext cryptoCtx)
+    {
+        mFrame = BinaryFrame.fromBytes(frame, ByteOrder.LITTLE_ENDIAN);
+        decode(cryptoCtx);
+    }
+
     /**
      * Constructs an AMBE voice or tone frame from the hexadecimal string frame representation
      *
      * @param hexString containing the string hexadecimal values of an AMBE frame
      */
-    AMBEFrame(String hexString)
+    public AMBEFrame(String hexString)
     {
         byte[] data = new byte[hexString.length() / 2];
         for(int x = 0; x < hexString.length(); x += 2)
@@ -107,21 +118,63 @@ public class AMBEFrame
         decode();
     }
 
+    private void decode() {
+        this.decode(null);
+    }
+
     /**
      * Decodes the AMBE frame parameters
      */
-    private void decode()
+    private void decode(ICryptoContext cryptoCtx)
     {
-        BinaryFrame vectorC0 = getVector(VECTOR_C0);
-        BinaryFrame vectorC1 = getVector(VECTOR_C1);
-        BinaryFrame vectorC2 = getVector(VECTOR_C2);
-        BinaryFrame vectorC3 = getVector(VECTOR_C3);
+        // 72 bits w/ 23 bits of error correction
+        BinaryFrame vectorC0 = getVector(VECTOR_C0); // 24 bits
+        BinaryFrame vectorC1 = getVector(VECTOR_C1); // 23 bits
+        BinaryFrame vectorC2 = getVector(VECTOR_C2); // 11 bits
+        BinaryFrame vectorC3 = getVector(VECTOR_C3); // 14 bits
+        //System.out.println("0:" + vectorC0 + " 1:" + vectorC1 + " 2:" + vectorC2 + " 3:" + vectorC3);
 
         //Error check C0, then descramble and error check C1
         mErrors[0] = Golay24.checkAndCorrect(vectorC0, 0);
         BinaryFrame modulationVector = getModulationVector(vectorC0.getInt(VECTOR_U0));
         vectorC1.xor(modulationVector);
         mErrors[1] = Golay23.checkAndCorrect(vectorC1, 0);
+
+        // encrypted?
+        if (cryptoCtx != null) {
+            // pack, decrypt, unpack
+            int u0 = vectorC0.getInt(VECTOR_U0); // 12 bits
+            int u1 = vectorC1.getInt(VECTOR_U1); // 12 bits
+            int u2 = vectorC2.getInt(VECTOR_U2); // 11 bits
+            int u3 = vectorC3.getInt(VECTOR_U3); // 14 bits
+            //System.out.format("U[] = (%x, %x, %x, %x)\n", u0, u1, u2, u3);
+
+            int[] cw = new int[7];
+            cw[0] = (u0 >> 4) & 0xff;
+            cw[1] = (((u0 & 0xf) << 4) + (u1 >> 8)) & 0xff;
+            cw[2] = u1 & 0xff;
+            cw[3] = (u2 >> 3) & 0xff;
+            cw[4] = (((u2 & 0x7) << 5) + (u3 >> 9)) & 0xff;
+            cw[5] = (u3 >> 1) & 0xff;
+            cw[6] = ((u3 & 0x1) << 7) & 0xff;
+
+            // we rely on the caller to configure the context: additional offset, etc.
+            //System.out.format("CW %02x %02x %02x %02x %02x %02x %02x\n", cw[0], cw[1], cw[2], cw[3], cw[4], cw[5], cw[6]);
+            cryptoCtx.process(cw);
+            //System.out.format("... decrypted %02x %02x %02x %02x %02x %02x %02x\n", cw[0], cw[1], cw[2], cw[3], cw[4], cw[5], cw[6]);
+
+            u0 = ((cw[0] << 4) & 0x0ff0) | ((cw[1] >> 4) & 0x000f);
+            u1 = ((cw[1] << 8) & 0x0f00) | (cw[2] & 0x00ff);
+            u2 = ((cw[3] << 3) & 0x07f8) | ((cw[4] >> 5) & 0x0007);
+            u3 = ((cw[4] << 9) & 0x3e00) | ((cw[5] << 1) & 0x01fe) | ((cw[6] >> 7) & 0x0001);
+            //System.out.format("U[] = (%x, %x, %x, %x)\n", u0, u1, u2, u3);
+
+            vectorC0.load(0, VECTOR_U0.length, u0);
+            vectorC1.load(0, VECTOR_U1.length, u1);
+            vectorC2.load(0, VECTOR_U2.length, u2);
+            vectorC3.load(0, VECTOR_U3.length, u3);
+        }
+
         int b0 = (vectorC0.getInt(VECTOR_U0_B0_HIGH) << 3) + vectorC3.getInt(VECTOR_U3_B0_LOW);
         int errorCount = mErrors[0] + mErrors[1];
 
